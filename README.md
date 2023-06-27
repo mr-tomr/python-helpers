@@ -7,7 +7,6 @@ ResolveListOfIPs.py
 
 
 TextCaseConverter.py
-![ConvertTextCaseInWindows](https://github.com/mr-tomr/python-helpers/blob/main/images/TextCaseConverter.png)
 
 <img src="https://github.com/mr-tomr/python-helpers/blob/main/images/TextCaseConverter.png" alt="Alt Text" style="width: 300px;">
 
