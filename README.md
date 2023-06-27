@@ -2,7 +2,8 @@
 Misc Python scripts to automate the repetive stuff.
 
 CreateTestReportingFolders.py
-<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/CreateTestReportFolders.png" alt="Alt Text" style="width: 300px;">
+
+<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/CreateTestReportFolders.png" alt="Alt Text" style="width: 500px;">
 
 ResolveListOfIPs.py
 
