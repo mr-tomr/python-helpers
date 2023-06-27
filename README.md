@@ -1,5 +1,5 @@
 # python-helpers
-Misc Python scripts to automate the repetive stuff.
+Miscellaneous Python scripts to automate the repetive stuff.
 
 CreateTestReportingFolders.py
 
