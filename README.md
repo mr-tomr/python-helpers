@@ -7,4 +7,4 @@ ResolveListOfIPs.py
 
 
 TextCaseConverter.py
-![ConvertTextCaseInWindows](https://github.com/mr-tomr/python-helpers/blob/main/TextCaseConverter.py)
+![ConvertTextCaseInWindows](https://github.com/mr-tomr/python-helpers/blob/main/images/TextCaseConverter.png)
