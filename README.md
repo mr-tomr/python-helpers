@@ -9,6 +9,10 @@ Miscellaneous Python scripts to automate the repetetive stuff.
 
 <img src="https://github.com/mr-tomr/python-helpers/blob/main/images/bcrypt.png" alt="Alt Text" style="width: 500px;">
 
+[reposcraper.py](/mr-tomr/python-helpers/blob/main/reposcraper.py)
+
+[RepoScraper.py](https://github.com/mr-tomr/python-helpers/blob/main/images/repoScraper.png)
+
 [ResolveListOfIPs.py](https://github.com/mr-tomr/python-helpers/blob/main/ResolveListOfIPs.py)
 
 ![ResolveListofIPs.py](https://github.com/mr-tomr/python-helpers/blob/main/images/resolveListOfIPs.png)
