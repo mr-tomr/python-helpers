@@ -7,7 +7,8 @@ CreateTestReportingFolders.py
 
 RecoverBcryptPaswword.py
 
-![RecverBcryptPasswords.py](https://github.com/mr-tomr/python-helpers/blob/main/images/bcrypt.png))
+![RecverBcryptPasswords.py]())
+<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/bcrypt.png" alt="Alt Text" style="width: 500px;">
 
 ResolveListOfIPs.py
 
