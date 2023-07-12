@@ -9,6 +9,10 @@ ResolveListOfIPs.py
 
 ![ResolveListofIPs.py](https://github.com/mr-tomr/python-helpers/blob/main/images/resolveListOfIPs.png)
 
+ResolveListOfIPs.py
+
+![ResolveListofIPs.py](https://github.com/mr-tomr/python-helpers/blob/main/images/resolveListOfIPs.png)
+
 
 TextCaseConverter.py
 
