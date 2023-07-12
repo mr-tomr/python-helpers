@@ -11,7 +11,8 @@ Miscellaneous Python scripts to automate the repetetive stuff.
 
 [reposcraper.py](/mr-tomr/python-helpers/blob/main/reposcraper.py)
 
-[RepoScraper.py](https://github.com/mr-tomr/python-helpers/blob/main/images/repoScraper.png)
+<img src="[https://github.com/mr-tomr/python-helpers/blob/main/images/bcrypt.png](https://github.com/mr-tomr/python-helpers/blob/main/images/repoScraper.png)" alt="Alt Text" style="width: 500px;">
+
 
 [ResolveListOfIPs.py](https://github.com/mr-tomr/python-helpers/blob/main/ResolveListOfIPs.py)
 
