@@ -9,7 +9,7 @@ Miscellaneous Python scripts to automate the repetetive stuff.
 
 <img src="https://github.com/mr-tomr/python-helpers/blob/main/images/bcrypt.png" alt="Alt Text" style="width: 500px;">
 
-[RepoScraper.py](/mr-tomr/python-helpers/blob/main/reposcraper.py)
+[RepoScraper.py](https://github.com/mr-tomr/python-helpers/blob/main/reposcraper.py)
 
 <img src="https://github.com/mr-tomr/python-helpers/blob/main/images/repoScraper.png" alt="Alt Text" style="width: 600px;">
 
