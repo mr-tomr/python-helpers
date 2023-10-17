@@ -23,3 +23,7 @@ Miscellaneous Python scripts to automate the repetetive stuff.
 
 <img src="https://github.com/mr-tomr/python-helpers/blob/main/images/TextCaseConverter.png" alt="Alt Text" style="width: 300px;">
 
+[VerifyUserSMTPAccount.py](https://github.com/mr-tomr/python-helpers/blob/main/verifyUserSMTPAccount.py)
+
+<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/verifysmtpaccount.jpg" alt="Alt Text" style="width: 300px;">
+
