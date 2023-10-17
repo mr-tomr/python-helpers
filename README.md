@@ -25,5 +25,5 @@ Miscellaneous Python scripts to automate the repetetive stuff.
 
 [VerifyUserSMTPAccount.py](https://github.com/mr-tomr/python-helpers/blob/main/verifyUserSMTPAccount.py)
 
-<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/verifysmtpaccount.jpg" alt="Alt Text" style="width: 500px;">
+<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/verifysmtpaccount.jpg" alt="Alt Text" style="width: 600px;">
 
