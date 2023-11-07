@@ -5,6 +5,10 @@ Miscellaneous Python scripts to automate the repetetive stuff.
 
 <img src="https://github.com/mr-tomr/python-helpers/blob/main/images/CreateTestReportFolders.png" alt="Alt Text" style="width: 500px;">
 
+[MacroPayloadMaker.py](https://github.com/mr-tomr/python-helpers/blob/main/MacroPayloadMaker.py)
+
+<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/MacroPayloadMaker.jpg" alt="Alt Text" style="width: 500px;">
+
 [RecoverBcryptPaswword.py](https://github.com/mr-tomr/python-helpers/blob/main/RecoverBcryptPaswword.py)
 
 <img src="https://github.com/mr-tomr/python-helpers/blob/main/images/bcrypt.png" alt="Alt Text" style="width: 500px;">
