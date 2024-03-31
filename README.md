@@ -11,7 +11,8 @@ Miscellaneous Python scripts to automate the repetetive stuff.
 
 [Ncomb.py](https://github.com/mr-tomr/python-helpers/blob/main/Ncomb.py)
 
-<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/ncombpynew.jpg" alt="Alt Text" style="width: 500px;">
+<img src="https://github.com/mr-tomr/python-helpers/blob/main/images/
+ncombpyformat1.jpg" alt="Alt Text" style="width: 500px;">
 
 [RecoverBcryptPaswword.py](https://github.com/mr-tomr/python-helpers/blob/main/RecoverBcryptPaswword.py)
 
