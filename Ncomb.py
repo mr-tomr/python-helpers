@@ -30,11 +30,11 @@ for line in lines:
         ports = match.group(2)  # Extract port information
 
         # Split port information into individual ports
-        port_list = re.findall(r"(\d+)/open/tcp//([^/]*)", ports)
+        port_list = re.findall(r"(\d+)/open/tcp//([^/]*)//([^,]*)", ports)
         
         # Print IP address
         print(ip)
 
         # Print port information for each port
-        for port, service in port_list:
-            print(f"{port}/{service}/tcp  open  {service}")
+        for port, service, info in port_list:
+            print(f"{port}/{service}/tcp  open  {service} {info}")
