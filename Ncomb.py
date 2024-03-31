@@ -33,7 +33,7 @@ for line in lines:
         port_list = re.findall(r"(\d+)/open/tcp//([^/]*)//([^,]*)", ports)
         
         # Print IP address
-        print(f"\n",ip," - \n Hostname -\n OS - ")
+        print(f"\n",ip,"\n   Hostname - \n   OS - ")
 
         # Print port information for each port
         for port, service, info in port_list:
