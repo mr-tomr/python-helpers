@@ -2,6 +2,9 @@
 # 20240331
 # Combs NMAP Grepable File for all ports and services associated with each IP
 
+# Aggregate findings from sub folders with
+# find . -type f -name "*.gnmap" -exec echo {} \; -exec python3 /opt/ncomb/ncomb.py {} \; -exec echo \; 
+
 # Usage python script_name.py nmapScanResults.gnmap
 
 import sys
