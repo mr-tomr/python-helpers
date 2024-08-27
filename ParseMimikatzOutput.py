@@ -14,29 +14,24 @@ def parse_mimikatz_output(output):
     
     for line in lines:
         # Check for user name
-        user_match = re.match(r"^\s*\*\s*Username\s*:\s*(\S+)", line)
+        user_match = re.match(r"^\s*User\s*:\s*(\S+)", line)
         if user_match:
             if current_user and current_user['NTLM Hash'] and current_user['NTLM Hash'] != 'None':
-                user_key = (current_user['User'], current_user['Domain'], current_user['NTLM Hash'])
+                user_key = (current_user['User'], current_user['Domain'], current_user['NTLM Hash'], current_user['Type'])
                 if user_key not in unique_users:
                     users.append(current_user)
                     unique_users.add(user_key)
                     ntlm_hashes.add(current_user['NTLM Hash'])
-            current_user = {'User': user_match.group(1), 'Domain': None, 'NTLM Hash': None}
-        
-        # Check for domain
-        domain_match = re.match(r"^\s*\*\s*Domain\s*:\s*(\S+)", line)
-        if domain_match and current_user:
-            current_user['Domain'] = domain_match.group(1)
+            current_user = {'User': user_match.group(1), 'Domain': None, 'NTLM Hash': None, 'Type': 'Local/Domain Not Set'}
         
         # Check for NTLM hash
-        ntlm_match = re.match(r"^\s*\*\s*NTLM\s*:\s*([a-fA-F0-9]+)", line)
+        ntlm_match = re.match(r"^\s*Hash\s+NTLM\s*:\s*([a-fA-F0-9]+)", line)
         if ntlm_match and current_user:
             current_user['NTLM Hash'] = ntlm_match.group(1)
     
     # Add the last user to the list if it's valid
     if current_user and current_user['NTLM Hash'] and current_user['NTLM Hash'] != 'None':
-        user_key = (current_user['User'], current_user['Domain'], current_user['NTLM Hash'])
+        user_key = (current_user['User'], current_user['Domain'], current_user['NTLM Hash'], current_user['Type'])
         if user_key not in unique_users:
             users.append(current_user)
             unique_users.add(user_key)
@@ -66,11 +61,10 @@ def main():
         else:
             print("User details:")
             for user in users:
-                print(f"User: {user['User']}, Domain: {user['Domain']}, NTLM Hash: {user['NTLM Hash']}")
+                print(f"User: {user['User']}, NTLM Hash: {user['NTLM Hash']}")
             
-            print("\nNTLM Hashes:")
-            for hash_value in ntlm_hashes:
-                print(hash_value)
+            print("\nNTLM Hashes (for copy-paste):")
+            print("\n".join(ntlm_hashes))
     
     except Exception as e:
         print(f"An error occurred: {e}")
