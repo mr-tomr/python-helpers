@@ -1,3 +1,5 @@
+# mimi mimikatz hash grabber
+
 import re
 import sys
 import os
