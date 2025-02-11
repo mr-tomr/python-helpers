@@ -1,5 +1,5 @@
 # Created and uploaded - Tom R.
-# 20240331
+# 20240331 - Updated 20240910
 # Combs NMAP Grepable File for all ports and services associated with each IP
 
 # Usage python ncomb.py nmapScanResults.gnmap
@@ -14,8 +14,8 @@ if len(sys.argv) < 2:
 
 filename = sys.argv[1]
 
-# Open the gnmap file
-with open(filename, "r") as f:
+# Open the gnmap file with a different encoding (ISO-8859-1 in this case)
+with open(filename, "r", encoding="ISO-8859-1") as f:
     lines = f.readlines()
 
 # Regular expression pattern to extract IP and port information
