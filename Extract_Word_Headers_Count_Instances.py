@@ -44,7 +44,7 @@ def extract_heading_counts(docx_path, output_txt=None):
                 else:
                     i += 1
  
-            lines.append(f"{h3_text} ({h4_count} subheadings)")
+            lines.append(f"{h3_text}\t({h4_count} subheadings)")
         else:
             i += 1
  
