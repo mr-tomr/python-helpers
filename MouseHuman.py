@@ -1,135 +1,149 @@
 # InterfacePresence.py
-# Requirements (Windows):
-#   pip install pyautogui pynput pywin32
-#
-# Features:
-# - Human-like, non-constant cursor movement (curved paths + jitter + idle variance)
-# - Timing variance for actions and typing cadence
-# - Start/Stop from UI (and ESC as a global kill)
-# - Click-to-target typing into an already-open window (no spawning)
-# - Fully resizable window; grid-managed layout with sensible minimums
-# - DPI-aware on Windows; UI scale slider for high-DPI screens
-#
-# Tips:
-# - Move the mouse to a screen corner to trigger PyAutoGUI FAILSAFE if needed.
+# Purpose: keep a session active by emulating human presence with a mix of
+#          small "micro" movements and meaningful cross-screen moves.
+# - Human easing (accelerate → coast → decelerate) + tiny jitter
+# - Occasional overshoot + correction to feel natural
+# - Brief dwells, optional rare clicks & scrolls (configurable)
+# - Start/Stop, ESC to stop, DPI-aware UI with zoom, resizable window
+# - Optional "click-to-target typing" tool for demos (does nothing unless used)
 
 import threading
 import random
 import time
-import tkinter as tk
-from tkinter import ttk
 import sys
 import math
+import tkinter as tk
+from tkinter import ttk
+from tkinter import font as tkfont
 
 import pyautogui
 from pynput import keyboard, mouse
 
-# Windows helper imports (optional on non-Windows)
+# Optional Windows helpers (focus + DPI)
 try:
     import ctypes
     import win32gui
     import win32con
-    import win32api
 except Exception:
     ctypes = None
     win32gui = None
     win32con = None
-    win32api = None
 
-pyautogui.FAILSAFE = True  # corner of screen triggers safety exception
+pyautogui.FAILSAFE = True  # fling cursor to a corner to abort any pyautogui action
 
-# ------------------------------
-# DPI awareness (Windows)
-# ------------------------------
-def _enable_dpi_awareness():
+# -------------------- DPI helpers --------------------
+def _enable_dpi_awareness_windows():
     if ctypes is None:
         return
     try:
-        # Try Windows 10+ Per-Monitor V2 first
-        shcore = ctypes.windll.shcore
-        shcore.SetProcessDpiAwareness(2)
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor V2
     except Exception:
         try:
-            user32 = ctypes.windll.user32
-            user32.SetProcessDPIAware()
+            ctypes.windll.user32.SetProcessDPIAware()
         except Exception:
             pass
 
-_enable_dpi_awareness()
+def _get_system_dpi_windows():
+    if ctypes is None:
+        return None
+    try:
+        dpi = ctypes.windll.user32.GetDpiForSystem()
+        return int(dpi)
+    except Exception:
+        pass
+    try:
+        hdc = ctypes.windll.user32.GetDC(0)
+        dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
+        ctypes.windll.user32.ReleaseDC(0, hdc)
+        return int(dpi)
+    except Exception:
+        pass
+    return None
 
-# ------------------------------
-# Random helpers (human cadence)
-# ------------------------------
-def r_between(a, b):
-    return random.uniform(a, b)
+def _default_tk_scaling():
+    _enable_dpi_awareness_windows()
+    dpi = _get_system_dpi_windows()
+    if dpi:
+        return max(1.1, round(dpi / 72.0, 2))  # tk expects pixels/point (1 pt = 1/72")
+    return 1.33
 
-def jitter(val, j=3.0):
-    return val + random.uniform(-j, j)
+# -------------------- randomness helpers --------------------
+def _r(a, b): return random.uniform(a, b)
+def _ri(a, b): return random.randint(a, b)
+def _j(v, j=1.4): return v + random.uniform(-j, j)
 
-def human_delay(base_min=0.08, base_max=0.22, occasional_pause_chance=0.07):
-    d = r_between(base_min, base_max)
-    if random.random() < occasional_pause_chance:
-        d += r_between(0.3, 1.2)
-    time.sleep(d)
+# -------------------- easing & paths --------------------
+def _ease_in_out_cubic(t: float) -> float:
+    return 4*t*t*t if t < 0.5 else 1 - pow(-2*t + 2, 3) / 2
 
-def human_interval_for_char():
-    # Gaussian-ish per-char delay
-    return max(0.015, random.gauss(0.07, 0.03))
-
-# ------------------------------
-# Mouse pathing
-# ------------------------------
-def _bezier_points(p0, p1, ctrl, steps=30):
+def _bezier(p0, p1, c, steps=48):
     for i in range(steps + 1):
         t = i / steps
-        x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * ctrl[0] + t ** 2 * p1[0]
-        y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * ctrl[1] + t ** 2 * p1[1]
-        yield (x, y)
+        x = (1-t)**2 * p0[0] + 2*(1-t)*t * c[0] + t**2 * p1[0]
+        y = (1-t)**2 * p0[1] + 2*(1-t)*t * c[1] + t**2 * p1[1]
+        yield (x, y), t
 
-def move_mouse_human(to_x, to_y, duration=0.8):
-    start_x, start_y = pyautogui.position()
-    mid_x = (start_x + to_x) / 2 + random.uniform(-120, 120)
-    mid_y = (start_y + to_y) / 2 + random.uniform(-120, 120)
-    pts = list(_bezier_points((start_x, start_y), (to_x, to_y), (mid_x, mid_y), steps=30))
-    seg_base = max(0.01, duration / len(pts))
-    for (x, y) in pts:
-        pyautogui.moveTo(jitter(x, 1.5), jitter(y, 1.5), duration=0)
-        time.sleep(seg_base * random.uniform(0.6, 1.4))
+def _human_move_path(sx, sy, tx, ty, steps=48, overshoot_prob=0.25):
+    # Single control point with offset → gentle curve
+    cx = (sx + tx) / 2 + _r(-120, 120)
+    cy = (sy + ty) / 2 + _r(-120, 120)
 
-def small_jitter_walk(steps=10):
+    # Optionally overshoot a little then correct back
+    overshoot = (random.random() < overshoot_prob)
+    if overshoot:
+        ox = tx + _r(-35, 35)
+        oy = ty + _r(-35, 35)
+        # path 1: to near target but pass it a bit
+        pts1 = list(_bezier((sx, sy), (ox, oy), (cx, cy), steps=max(24, steps//2)))
+        # small pause, then correction micro-path
+        cx2 = (ox + tx) / 2 + _r(-40, 40)
+        cy2 = (oy + ty) / 2 + _r(-40, 40)
+        pts2 = list(_bezier((ox, oy), (tx, ty), (cx2, cy2), steps=max(18, steps//3)))
+        return pts1 + pts2
+    else:
+        return list(_bezier((sx, sy), (tx, ty), (cx, cy), steps=steps))
+
+def _sleep_deltas_for_duration(duration, n_steps):
+    # Allocate time per step using easing so motion accelerates then slows
+    eased = [_ease_in_out_cubic(i / n_steps) for i in range(n_steps + 1)]
+    total = eased[-1] - eased[0]
+    if total <= 0:
+        total = 1.0
+    times = [duration * (e - eased[0]) / total for e in eased]
+    deltas = [max(0.002, times[i+1] - times[i]) for i in range(n_steps)]
+    return deltas
+
+def move_mouse_human(tx, ty, duration=0.6, steps=44):
+    sx, sy = pyautogui.position()
+    pts = _human_move_path(sx, sy, tx, ty, steps=steps, overshoot_prob=0.28)
+    sleeps = _sleep_deltas_for_duration(duration, len(pts) - 1)
+    # Walk the path with tiny jitter and slight timing variance
+    for ((x, y), _t), slp in zip(pts[1:], sleeps):
+        pyautogui.moveTo(_j(x), _j(y), duration=0)
+        time.sleep(slp * _r(0.90, 1.12))
+
+def micro_jitter(steps=10):
     for _ in range(steps):
         x, y = pyautogui.position()
-        dx = random.randint(-5, 5)
-        dy = random.randint(-4, 6)
-        pyautogui.moveTo(x + dx, y + dy, duration=0)
-        time.sleep(random.uniform(0.01, 0.06))
+        pyautogui.moveTo(x + _ri(-5, 5), y + _ri(-4, 6), duration=0)
+        time.sleep(_r(0.01, 0.05))
 
 def occasional_scroll():
-    if random.random() < 0.25:
-        amount = random.choice([1, 2, -1, -2, 3, -3]) * random.randint(20, 60)
-        pyautogui.scroll(amount)
-        human_delay(0.1, 0.25, occasional_pause_chance=0)
+    amt = random.choice([1, 2, -1, -2, 3, -3]) * _ri(20, 60)
+    pyautogui.scroll(amt)
 
-# ------------------------------
-# Typing
-# ------------------------------
+# -------------------- typing tool (optional) --------------------
+def _char_interval(): return max(0.015, random.gauss(0.07, 0.03))
 def type_text_human(text):
     for ch in text:
-        if ch == '\n':
-            pyautogui.press('enter')
-        else:
-            pyautogui.typewrite(ch, interval=0)
-        time.sleep(human_interval_for_char())
-        if ch in ' .,;:!?':
-            if random.random() < 0.20:
-                time.sleep(random.uniform(0.15, 0.35))
+        if ch == '\n': pyautogui.press('enter')
+        else: pyautogui.typewrite(ch, interval=0)
+        time.sleep(_char_interval())
 
-# ------------------------------
-# Window targeting (Windows focus)
-# ------------------------------
+# -------------------- focus helper --------------------
 def bring_window_to_front_at_point(pt):
     if win32gui is None or win32con is None:
-        return True  # best-effort on non-Windows
+        return True
     x, y = pt
     hwnd = win32gui.WindowFromPoint((int(x), int(y)))
     if not hwnd:
@@ -142,158 +156,245 @@ def bring_window_to_front_at_point(pt):
     except Exception:
         return False
 
-# ------------------------------
-# Worker thread: randomized activity
-# ------------------------------
+# -------------------- behavior mixer --------------------
 class PresenceThread(threading.Thread):
-    def __init__(self, stop_evt, min_idle, max_idle):
+    """
+    Blends micro movements with meaningful cross-screen moves:
+      - micro: small jitter clusters that run frequently
+      - meaningful: decisive move to a far region with eased speed and occasional overshoot+correction
+      - brief dwells with tiny nudges so system idle never builds up
+    Optional: rare click / rare scroll.
+    """
+    def __init__(self, stop_evt, min_idle, max_idle,
+                 micro_weight, meaningful_weight,
+                 click_enabled, scroll_enabled,
+                 click_prob, scroll_prob,
+                 screen_margin):
         super().__init__(daemon=True)
         self.stop_evt = stop_evt
         self.min_idle = min_idle
         self.max_idle = max_idle
+        self.micro_weight = micro_weight
+        self.meaningful_weight = meaningful_weight
+        self.click_enabled = click_enabled
+        self.scroll_enabled = scroll_enabled
+        self.click_prob = click_prob
+        self.scroll_prob = scroll_prob
+        self.screen_margin = screen_margin
+
+    def _maybe_click(self):
+        if self.click_enabled and random.random() < self.click_prob:
+            pyautogui.click()
+            time.sleep(_r(0.08, 0.22))
+
+    def _maybe_scroll(self):
+        if self.scroll_enabled and random.random() < self.scroll_prob:
+            occasional_scroll()
+            time.sleep(_r(0.08, 0.25))
+
+    def _rand_screen_point(self):
+        sw, sh = pyautogui.size()
+        m = self.screen_margin
+        return _ri(m, sw - m), _ri(m, sh - m)
+
+    def _meaningful_move(self):
+        # choose a point across the screen, biased away from current spot
+        cx, cy = pyautogui.position()
+        sw, sh = pyautogui.size()
+        m = self.screen_margin
+        # Prefer farther targets: try multiple and pick the farthest
+        candidates = [self._rand_screen_point() for _ in range(5)]
+        tx, ty = max(candidates, key=lambda p: (p[0]-cx)**2 + (p[1]-cy)**2)
+        # Duration scales with distance so it doesn't "teleport"
+        dist = math.hypot(tx - cx, ty - cy)
+        base = 0.35 + min(1.4, dist / max(sw, sh))  # 0.35..~1.75
+        move_mouse_human(tx, ty, duration=base * _r(0.9, 1.1), steps=_ri(36, 54))
+        # brief dwell & micro-correct (humans wiggle a bit after landing)
+        time.sleep(_r(0.05, 0.18))
+        if random.random() < 0.65:
+            micro_jitter(_ri(3, 8))
+
+    def _micro_move(self):
+        # tight cluster of small changes; occasionally include a mini hop
+        micro_jitter(_ri(7, 16))
+        if random.random() < 0.25:
+            x, y = pyautogui.position()
+            pyautogui.moveTo(x + _ri(-15, 15), y + _ri(-12, 18), duration=0)
+            time.sleep(_r(0.02, 0.06))
 
     def run(self):
-        scr_w, scr_h = pyautogui.size()
         while not self.stop_evt.is_set():
+            # choose action weighted by user sliders
             action = random.choices(
-                population=["move_far", "jitter", "idle", "scroll_then_jitter"],
-                weights=[0.35, 0.35, 0.15, 0.15],
+                ["micro", "meaningful", "scroll", "idle"],
+                weights=[self.micro_weight, self.meaningful_weight, 0.07, 0.13],
                 k=1
             )[0]
 
-            if action == "move_far":
-                target = (random.randint(40, scr_w - 40), random.randint(40, scr_h - 60))
-                move_mouse_human(*target, duration=random.uniform(0.4, 1.4))
-                human_delay(0.05, 0.25)
+            if action == "micro":
+                self._micro_move()
+                self._maybe_click()
 
-            elif action == "jitter":
-                small_jitter_walk(steps=random.randint(6, 15))
-                human_delay(0.08, 0.3)
+            elif action == "meaningful":
+                self._meaningful_move()
+                self._maybe_click()
 
-            elif action == "scroll_then_jitter":
-                occasional_scroll()
-                small_jitter_walk(steps=random.randint(4, 10))
+            elif action == "scroll":
+                self._maybe_scroll()
+                self._micro_move()
 
-            # Idle with variance and occasional micro-movements
-            idle_s = r_between(self.min_idle, self.max_idle)
+            # Idle with periodic tiny nudges so OS never counts true idle
+            idle_for = _r(self.min_idle, self.max_idle)
             t0 = time.time()
-            while time.time() - t0 < idle_s and not self.stop_evt.is_set():
-                if random.random() < 0.08:
-                    small_jitter_walk(steps=random.randint(2, 5))
-                time.sleep(random.uniform(0.05, 0.2))
+            while time.time() - t0 < idle_for and not self.stop_evt.is_set():
+                if random.random() < 0.22:  # nudge during idle
+                    self._micro_move()
+                    self._maybe_click()
+                time.sleep(_r(0.25, 0.8))
 
-# ------------------------------
-# App UI
-# ------------------------------
+# -------------------- UI --------------------
 class InterfacePresenceApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Interface Presence")
-        # Fully resizable; set sensible minimum size
-        self.minsize(640, 400)
 
-        # Theme
+        # DPI + fonts
+        self._base_scaling = _default_tk_scaling()
+        self._zoom = tk.DoubleVar(value=self._base_scaling)
+        self.tk.call('tk', 'scaling', self._zoom.get())
+
+        tkfont.nametofont("TkDefaultFont").configure(size=12)
+        tkfont.nametofont("TkTextFont").configure(size=12)
+        tkfont.nametofont("TkHeadingFont").configure(size=15, weight="bold")
+        tkfont.nametofont("TkMenuFont").configure(size=12)
+
+        self.minsize(880, 560)
         self.style = ttk.Style(self)
-        try:
-            self.style.theme_use("vista")
-        except Exception:
-            pass
+        try: self.style.theme_use("vista")
+        except Exception: pass
 
-        # UI Scale for high-DPI
-        self.ui_scale = tk.DoubleVar(value=1.0)
-        self.tk.call('tk', 'scaling', self.ui_scale.get())
-
-        # Listener & worker state
+        # State
         self.stop_evt = threading.Event()
         self.presence_thread = None
-        self.kb_listener = keyboard.Listener(on_press=self._on_key_press)
+        self.kb_listener = keyboard.Listener(on_press=self._on_key)
         self.kb_listener.start()
 
-        # Root grid config
+        # Layout
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
+        self._build_menu()
+        self._build_main()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        # Main frame
-        self.root_frame = ttk.Frame(self, padding=12)
-        self.root_frame.grid(row=0, column=0, sticky="nsew")
-        for c in range(12):
-            self.root_frame.columnconfigure(c, weight=1)
-        for r in range(20):
-            self.root_frame.rowconfigure(r, weight=0)
-        # Make the big text box expand
-        self.root_frame.rowconfigure(9, weight=1)
-        self.root_frame.rowconfigure(10, weight=1)
+    # ----- Menu / Zoom -----
+    def _build_menu(self):
+        menubar = tk.Menu(self)
+        view = tk.Menu(menubar, tearoff=False)
+        view.add_command(label="Zoom In", command=self.zoom_in, accelerator="Ctrl++")
+        view.add_command(label="Zoom Out", command=self.zoom_out, accelerator="Ctrl+-")
+        view.add_command(label="Reset Zoom", command=self.zoom_reset, accelerator="Ctrl+0")
+        menubar.add_cascade(label="View", menu=view)
+        self.config(menu=menubar)
+
+        self.bind_all("<Control-plus>", lambda e: self.zoom_in())
+        self.bind_all("<Control-KP_Add>", lambda e: self.zoom_in())
+        self.bind_all("<Control-minus>", lambda e: self.zoom_out())
+        self.bind_all("<Control-KP_Subtract>", lambda e: self.zoom_out())
+        self.bind_all("<Control-0>", lambda e: self.zoom_reset())
+
+    def zoom_in(self):  self._set_zoom(self._zoom.get() + 0.1)
+    def zoom_out(self): self._set_zoom(self._zoom.get() - 0.1)
+    def zoom_reset(self): self._set_zoom(self._base_scaling)
+    def _set_zoom(self, val):
+        self._zoom.set(max(0.8, min(3.0, round(val, 2))))
+        self.tk.call('tk', 'scaling', self._zoom.get())
+        self.update_idletasks()
+
+    # ----- Main -----
+    def _build_main(self):
+        root = ttk.Frame(self, padding=12)
+        root.grid(row=0, column=0, sticky="nsew")
+        for c in range(12): root.columnconfigure(c, weight=1)
+        for r in range(30): root.rowconfigure(r, weight=0)
 
         r = 0
-        header = ttk.Label(self.root_frame, text="Interface Presence", font=("Segoe UI", 14, "bold"))
-        header.grid(row=r, column=0, columnspan=12, sticky="w")
+        ttk.Label(root, text="Interface Presence", font=("TkHeadingFont")).grid(row=r, column=0, columnspan=12, sticky="w")
+        r += 1
+        ttk.Separator(root, orient="horizontal").grid(row=r, column=0, columnspan=12, sticky="ew", pady=(6, 10))
         r += 1
 
-        # Controls
-        ttk.Label(self.root_frame, text="Idle (min s):").grid(row=r, column=0, sticky="e", padx=(0,6), pady=(8,0))
-        self.min_idle = tk.DoubleVar(value=2.0)
-        ttk.Spinbox(self.root_frame, from_=0.0, to=60.0, increment=0.5, textvariable=self.min_idle, width=8)\
-            .grid(row=r, column=1, sticky="w", pady=(8,0))
+        # Timing sliders
+        ttk.Label(root, text="Idle (min s):").grid(row=r, column=0, sticky="e")
+        self.min_idle = tk.DoubleVar(value=1.3)
+        ttk.Spinbox(root, from_=0.0, to=60.0, increment=0.5, textvariable=self.min_idle, width=7).grid(row=r, column=1, sticky="w")
 
-        ttk.Label(self.root_frame, text="Idle (max s):").grid(row=r, column=2, sticky="e", padx=(12,6), pady=(8,0))
-        self.max_idle = tk.DoubleVar(value=6.0)
-        ttk.Spinbox(self.root_frame, from_=0.5, to=120.0, increment=0.5, textvariable=self.max_idle, width=8)\
-            .grid(row=r, column=3, sticky="w", pady=(8,0))
+        ttk.Label(root, text="Idle (max s):").grid(row=r, column=2, sticky="e")
+        self.max_idle = tk.DoubleVar(value=3.6)
+        ttk.Spinbox(root, from_=0.5, to=120.0, increment=0.5, textvariable=self.max_idle, width=7).grid(row=r, column=3, sticky="w")
 
-        self.start_btn = ttk.Button(self.root_frame, text="Start", command=self.start_presence)
-        self.stop_btn  = ttk.Button(self.root_frame, text="Stop",  command=self.stop_presence, state="disabled")
-        self.start_btn.grid(row=r, column=5, sticky="w", padx=(18,6), pady=(8,0))
-        self.stop_btn.grid(row=r, column=6, sticky="w", pady=(8,0))
-        ttk.Label(self.root_frame, text="(ESC stops)").grid(row=r, column=7, sticky="w", pady=(8,0))
+        # Movement mix (micro vs meaningful)
+        ttk.Label(root, text="Micro weight:").grid(row=r, column=5, sticky="e")
+        self.micro_weight = tk.DoubleVar(value=0.58)
+        ttk.Spinbox(root, from_=0.0, to=1.0, increment=0.01, textvariable=self.micro_weight, width=6).grid(row=r, column=6, sticky="w")
+
+        ttk.Label(root, text="Meaningful weight:").grid(row=r, column=7, sticky="e")
+        self.meaningful_weight = tk.DoubleVar(value=0.32)
+        ttk.Spinbox(root, from_=0.0, to=1.0, increment=0.01, textvariable=self.meaningful_weight, width=6).grid(row=r, column=8, sticky="w")
+
+        self.start_btn = ttk.Button(root, text="Start", command=self.start_presence)
+        self.stop_btn  = ttk.Button(root, text="Stop",  command=self.stop_presence, state="disabled")
+        self.start_btn.grid(row=r, column=10, sticky="w")
+        self.stop_btn.grid(row=r, column=11, sticky="w")
         r += 1
 
-        # UI scale
-        ttk.Label(self.root_frame, text="UI scale:").grid(row=r, column=0, sticky="e", padx=(0,6))
-        scale = ttk.Scale(self.root_frame, from_=0.8, to=1.8, variable=self.ui_scale, command=self._on_scale_change)
-        scale.grid(row=r, column=1, columnspan=3, sticky="ew")
+        # Behavior toggles
+        self.click_enabled = tk.BooleanVar(value=True)
+        self.scroll_enabled = tk.BooleanVar(value=False)
+        ttk.Checkbutton(root, text="Occasional click", variable=self.click_enabled).grid(row=r, column=0, sticky="w")
+        ttk.Checkbutton(root, text="Occasional scroll", variable=self.scroll_enabled).grid(row=r, column=1, sticky="w")
+
+        ttk.Label(root, text="Click prob:").grid(row=r, column=2, sticky="e")
+        self.click_prob = tk.DoubleVar(value=0.03)
+        ttk.Spinbox(root, from_=0.0, to=0.2, increment=0.005, textvariable=self.click_prob, width=6).grid(row=r, column=3, sticky="w")
+
+        ttk.Label(root, text="Scroll prob:").grid(row=r, column=4, sticky="e")
+        self.scroll_prob = tk.DoubleVar(value=0.07)
+        ttk.Spinbox(root, from_=0.0, to=0.3, increment=0.01, textvariable=self.scroll_prob, width=6).grid(row=r, column=5, sticky="w")
+
+        ttk.Label(root, text="Screen margin (px):").grid(row=r, column=7, sticky="e")
+        self.screen_margin = tk.IntVar(value=60)
+        ttk.Spinbox(root, from_=0, to=200, increment=5, textvariable=self.screen_margin, width=6).grid(row=r, column=8, sticky="w")
         r += 1
 
-        ttk.Separator(self.root_frame, orient="horizontal").grid(row=r, column=0, columnspan=12, sticky="ew", pady=10)
+        # Zoom slider
+        ttk.Label(root, text="Zoom:").grid(row=r, column=0, sticky="e")
+        ttk.Scale(root, from_=0.8, to=3.0, variable=self._zoom, command=lambda *_: self._set_zoom(self._zoom.get())).grid(row=r, column=1, columnspan=3, sticky="ew")
         r += 1
 
-        # Typing section
-        ttk.Label(self.root_frame, text="Click-to-Target Typing", font=("Segoe UI", 12, "bold"))\
-            .grid(row=r, column=0, columnspan=6, sticky="w")
+        ttk.Separator(root, orient="horizontal").grid(row=r, column=0, columnspan=12, sticky="ew", pady=10)
         r += 1
 
-        ttk.Label(self.root_frame, text="After pressing the button, click inside the window you want to type into.")\
-            .grid(row=r, column=0, columnspan=10, sticky="w")
+        # Typing tool (optional)
+        ttk.Label(root, text="Click-to-Target Typing (optional)", font=("TkHeadingFont")).grid(row=r, column=0, columnspan=6, sticky="w")
+        r += 1
+        ttk.Label(root, text="Press the button, then click inside the window you want to type into.").grid(row=r, column=0, columnspan=10, sticky="w")
+        r += 1
+        self.pick_btn = ttk.Button(root, text="Pick target (next click) & Type", command=self.pick_and_type)
+        self.pick_btn.grid(row=r, column=0, sticky="w")
         r += 1
 
-        self.pick_and_type_btn = ttk.Button(self.root_frame, text="Pick target (next click) & Type", command=self.pick_and_type)
-        self.pick_and_type_btn.grid(row=r, column=0, sticky="w")
-        r += 1
+        ttk.Label(root, text="Text to type:").grid(row=r, column=0, sticky="nw")
+        root.rowconfigure(r+1, weight=1)
+        self.text_box = tk.Text(root, height=10)
+        self.text_box.grid(row=r, column=1, columnspan=10, sticky="nsew", padx=(6, 0))
+        self.text_box.insert("1.0", "This is a demo of human-like typing.\nIt only runs if you press the button above.")
+        r += 2
 
-        ttk.Label(self.root_frame, text="Text to type:").grid(row=r, column=0, sticky="nw", pady=(8,0))
-        self.text_box = tk.Text(self.root_frame, height=10, wrap="word")
-        self.text_box.grid(row=r, column=1, columnspan=10, sticky="nsew", padx=(6,0), pady=(8,0))
-        self.text_box.insert("1.0", "This is a human-like typing demo.\nYou can paste any content here.")
-        r += 1
-
-        ttk.Separator(self.root_frame, orient="horizontal").grid(row=r, column=0, columnspan=12, sticky="ew", pady=10)
+        ttk.Separator(root, orient="horizontal").grid(row=r, column=0, columnspan=12, sticky="ew", pady=10)
         r += 1
 
         self.status = tk.StringVar(value="Idle.")
-        ttk.Label(self.root_frame, textvariable=self.status, foreground="#555").grid(row=r, column=0, columnspan=12, sticky="w")
-
-        # Make text area expand with window
-        self.root_frame.rowconfigure(r-2, weight=1)  # the text box row expands
-        self.root_frame.columnconfigure(10, weight=3)
-
-        # Bind closing to stop threads/listeners
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-
-    # ----- UI scaling -----
-    def _on_scale_change(self, *_):
-        try:
-            self.tk.call('tk', 'scaling', float(self.ui_scale.get()))
-        except Exception:
-            pass
+        ttk.Label(root, textvariable=self.status, foreground="#555").grid(row=r, column=0, columnspan=12, sticky="w")
 
     # ----- Presence control -----
     def start_presence(self):
@@ -305,78 +406,83 @@ class InterfacePresenceApp(tk.Tk):
         if ma < mi:
             mi, ma = ma, mi
             self.min_idle.set(mi); self.max_idle.set(ma)
-        self.presence_thread = PresenceThread(self.stop_evt, mi, ma)
+
+        # normalize weights a bit so you can freely set sliders
+        micro_w = float(self.micro_weight.get())
+        meaningful_w = float(self.meaningful_weight.get())
+        total = max(0.01, micro_w + meaningful_w)
+        micro_w /= total
+        meaningful_w /= total
+
+        self.presence_thread = PresenceThread(
+            self.stop_evt,
+            mi, ma,
+            micro_w, meaningful_w,
+            self.click_enabled.get(),
+            self.scroll_enabled.get(),
+            float(self.click_prob.get()),
+            float(self.scroll_prob.get()),
+            int(self.screen_margin.get())
+        )
         self.presence_thread.start()
-        self.start_btn.config(state="disabled")
-        self.stop_btn.config(state="normal")
-        self.status.set("Presence simulation started.")
+        self.status.set("Presence running (mixed micro + meaningful movements).")
+        self._toggle_buttons(True)
 
     def stop_presence(self):
         self.stop_evt.set()
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="disabled")
         self.status.set("Stopped.")
+        self._toggle_buttons(False)
 
-    # ----- Global keyboard safety -----
-    def _on_key_press(self, key):
-        try:
-            if key == keyboard.Key.esc:
-                self.stop_presence()
-        except Exception:
-            pass
+    def _toggle_buttons(self, running):
+        self.start_btn.config(state="disabled" if running else "normal")
+        self.stop_btn.config(state="normal" if running else "disabled")
 
-    # ----- Click-to-target typing -----
+    # ----- Typing tool -----
     def pick_and_type(self):
-        self.status.set("Waiting for your next click to choose target window...")
+        self.status.set("Waiting for your click to choose target window…")
         self.update_idletasks()
-
-        # Hide self to avoid selecting it
         self.withdraw()
         clicked = {}
-
         def on_click(x, y, button, pressed):
             if pressed and button == mouse.Button.left:
                 clicked['pt'] = (x, y)
                 return False
-
         listener = mouse.Listener(on_click=on_click)
         listener.start()
         listener.join(timeout=30.0)
         self.deiconify()
 
         if 'pt' not in clicked:
-            self.status.set("No click captured. Try again.")
+            self.status.set("No click captured.")
             return
 
-        ok = bring_window_to_front_at_point(clicked['pt'])
+        bring_window_to_front_at_point(clicked['pt'])
         time.sleep(0.15)
-        if not ok:
-            self.status.set("Could not focus target; typing into current focus.")
-        else:
-            self.status.set("Target focused. Typing...")
-
-        text = self.text_box.get("1.0", "end-1c")
+        self.status.set("Typing…")
         try:
-            type_text_human(text)
+            type_text_human(self.text_box.get("1.0", "end-1c"))
             self.status.set("Done typing.")
         except pyautogui.FailSafeException:
-            self.status.set("Interrupted by PyAutoGUI FAILSAFE.")
+            self.status.set("Typing interrupted (FAILSAFE).")
         except Exception as e:
             self.status.set(f"Typing error: {e}")
 
-    # ----- Clean shutdown -----
+    # ----- Global ESC -----
+    def _on_key(self, key):
+        if key == keyboard.Key.esc:
+            self.stop_presence()
+
+    # ----- Window close -----
     def _on_close(self):
         try:
             self.stop_evt.set()
-            if self.kb_listener:
+            if hasattr(self, "kb_listener") and self.kb_listener:
                 self.kb_listener.stop()
         except Exception:
             pass
         self.destroy()
 
-# ------------------------------
-# Entry
-# ------------------------------
+# -------------------- main --------------------
 if __name__ == "__main__":
     try:
         app = InterfacePresenceApp()
